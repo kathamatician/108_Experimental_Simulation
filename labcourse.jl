@@ -121,9 +121,13 @@ function eom(r, par)
     dpy_GeV = dpy / (GeV_to_J * c_1 / c)
     dpz_GeV = dpz / (GeV_to_J * c_1 / c)
 
+	# Compute energy change rate due to electric field
+	dEn_si = q * (vx * Ex + vy * Ey + vz * Ez)  # Units: J/s
+	dEn_GeV = dEn_si / GeV_to_J  # Units: GeV/s
 
+	return [1.0u"s/s", vx, vy, vz, dEn_GeV, dpx_GeV, dpy_GeV, dpz_GeV]
     # Return derivatives: [dt/dt, dx/dt, dy/dt, dz/dt, dEn/dt, dpx/dt, dpy/dt, dpz/dt]
-    return [1.0u"s/s", vx, vy, vz, 0.0u"GeV/s", dpx_GeV, dpy_GeV, dpz_GeV]
+    #return [1.0u"s/s", vx, vy, vz, 0.0u"GeV/s", dpx_GeV, dpy_GeV, dpz_GeV]
 end
 
 # ╔═╡ 096a3b73-bdce-4a38-9ce0-bb186601c2e4
@@ -322,7 +326,7 @@ pdf = histogram(bin_positions, weights=bin_contents, bins=62, xlabel="Mass (MeV/
 
 # ╔═╡ 7df5fae0-614e-4c36-a073-680e7aaec332
 begin
-	cdf_values = ### Calculate CDF based on PDF
+	cdf_values = cumsum(bin_contents) / sum(bin_contents)### Calculate CDF based on PDF
 	cdf = histogram(bin_positions, weights=cdf_values, bins=62, xlabel="Mass (MeV/c²)", ylabel="Candidates", title="CDF of Resonance Data", legend=false)
 end
 
@@ -337,6 +341,9 @@ function hit_and_miss_sampling(bin_contents, bin_positions, num_samples)
 		random_y = rand() * max_bin_content
 		
     	### Position of hit is already set by (random_x,random_y), implement check whether it ahould be accepted or not
+		if random_y <= bin_contents[random_x]
+    		accepted_samples_hm[random_x] += 1
+		end
 	end
 	return accepted_samples_hm
 end
@@ -345,6 +352,13 @@ end
 begin
 	accepted_samples_hm = hit_and_miss_sampling(bin_contents, bin_positions, num_samples)
 	### Plot histogram with the simulated sample
+	histogram(bin_positions,
+              weights=accepted_samples_hm,
+              bins=62,
+              xlabel="Mass (MeV/c²)",
+              ylabel="Hits",
+              title="Hit-and-Miss Sampling Histogram",
+              legend=false)
 end
 
 # ╔═╡ 93a82374-9227-401e-b875-c453e08ddafa
@@ -354,6 +368,7 @@ function inverse_cdf_sampling(cdf_values, bin_positions, num_samples)
 	accepted_samples_inv = zeros(lastindex(bin_positions))
 	for i in 1:num_samples
 		### Implement sampling of random variable u which is needed for inverse CDF method
+		u = rand()
         accepted_samples_inv[findfirst(>=(u), cdf_values)] = accepted_samples_inv[findfirst(>=(u), cdf_values)] + 1
 	end
 	return accepted_samples_inv
@@ -363,6 +378,13 @@ end
 begin
 	accepted_samples_inv = inverse_cdf_sampling(cdf_values, bin_positions, num_samples)
 	### Plot histogram with the simulated sample
+	histogram(bin_positions,
+              weights=accepted_samples_inv,
+              bins=62,
+              xlabel="Mass (MeV/c²)",
+              ylabel="Samples",
+              title="Inverse CDF Sampling Histogram",
+              legend=false)
 end
 
 # ╔═╡ b85856c4-b722-4f0c-a3f3-7566938173da
@@ -384,29 +406,35 @@ function chi2(sample, data)
         throw(ArgumentError("Histograms must have the same number of bins"))
     end
 	
-    chi2_values = ### Implement calculation of chi2 values (Hint: use broadcasting or implement loop)
+    chi2_values = ((sample .- data).^2) ./ data ### Implement calculation of chi2 values (Hint: use broadcasting or implement loop)
     sum(chi2_values)
 end
 
 # ╔═╡ b0b544b1-e26c-49d8-87cf-1002142534c7
-chi2_hm = ### Calculate chi2 of Hit and miss method
+chi2_hm = chi2(accepted_samples_hm, bin_contents)### Calculate chi2 of Hit and miss method
 
 # ╔═╡ 7c274fb6-ccfe-484e-9c5b-321225186cb6
-chi2_inv = ### Calculate chi2 of Inverse CDF method
+chi2_inv = chi2(accepted_samples_inv, bin_contents)### Calculate chi2 of Inverse CDF method
 
 # ╔═╡ d2c1d638-f2c1-4834-9235-a9d55dbaa866
 function efficiency(sample, num_samples)
 	### Implement calculation of efficiency
+	return sum(sample) / num_samples
 end
 
 # ╔═╡ 6bb3a02f-4882-4626-9417-f3aa07521eb6
-eff_hm = ### Calculate efficiency of Hit and miss method
+eff_hm = efficiency(accepted_samples_hm, num_samples) ### Calculate efficiency of Hit and miss method
 
 # ╔═╡ 9431493e-8a10-4af6-904b-c1a03625932c
-eff_inv = ### Calculate efficiency of Inverse CDF method
+eff_inv = efficiency(accepted_samples_inv, num_samples)### Calculate efficiency of Inverse CDF method
 
 # ╔═╡ 33074b6a-c172-4544-a575-0649e7664632
 ### Compare performances of the two methods
+begin
+	println("Chi² (Hit-and-Miss): ", chi2_hm)
+	println("Efficiency (Hit-and-Miss): ", eff_hm)
+	println("Chi² (Inverse CDF): ", chi2_inv)
+end
 
 # ╔═╡ a86ea674-31a0-4285-9d33-84ffbdedeabd
 md"""
