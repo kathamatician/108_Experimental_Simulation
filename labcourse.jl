@@ -45,7 +45,7 @@ md"""
 
 #### Electric Field
 
-``E_x`` = $(@bind Ex Slider(0.0u"V/m":0.1u"V/m":10.0u"V/m", default=0.0u"V/m", show_value=true))
+``E_x`` = $(@bind Ex Slider(0.0u"V/m":0.1u"V/m":1000.0u"V/m", default=1000.0u"V/m", show_value=true))
 
 ``E_y`` = $(@bind Ey Slider(0.0u"V/m":0.1u"V/m":10.0u"V/m", default=0.0u"V/m", show_value=true))
 
@@ -69,7 +69,7 @@ md"""
 
 ``z_0`` = $(@bind z0 Slider(0.0u"m":0.1u"m":10.0u"m", default=0.0u"m", show_value=true))
 
-``p_{x_0}`` = $(@bind px0 Slider(0.0u"GeV/c":0.1u"GeV/c":10.0u"GeV/c", default=1.0u"GeV/c", show_value=true))
+``p_{x_0}`` = $(@bind px0 Slider(0.0u"GeV/c":1.0e-6u"GeV/c":1.0e-3u"GeV/c", default=1.0e-5u"GeV/c", show_value=true))
 
 ``p_{y_0}`` = $(@bind py0 Slider(0.0u"GeV/c":0.1u"GeV/c":10.0u"GeV/c", default=0.0u"GeV/c", show_value=true))
 
@@ -121,13 +121,8 @@ function eom(r, par)
     dpy_GeV = dpy / (GeV_to_J * c_1 / c)
     dpz_GeV = dpz / (GeV_to_J * c_1 / c)
 
-	# Compute energy change rate due to electric field
-	dEn_si = q * (vx * Ex + vy * Ey + vz * Ez)  # Units: J/s
-	dEn_GeV = dEn_si / GeV_to_J  # Units: GeV/s
-
-	return [1.0u"s/s", vx, vy, vz, dEn_GeV, dpx_GeV, dpy_GeV, dpz_GeV]
     # Return derivatives: [dt/dt, dx/dt, dy/dt, dz/dt, dEn/dt, dpx/dt, dpy/dt, dpz/dt]
-    #return [1.0u"s/s", vx, vy, vz, 0.0u"GeV/s", dpx_GeV, dpy_GeV, dpz_GeV]
+    return [1.0u"s/s", vx, vy, vz, 0.0u"GeV/s", dpx_GeV, dpy_GeV, dpz_GeV]
 end
 
 # ╔═╡ 096a3b73-bdce-4a38-9ce0-bb186601c2e4
@@ -157,7 +152,7 @@ function euler(f, r0, par, tmax, dt)
     for t in ts
         dimensions(r)
     	push!(rs, copy(r))
-		
+        
         ### Calculate all parameters of the state array (Hint: use broadcasting)
 		r .= r .+ dt .* f(r, par)
 	end
@@ -179,11 +174,9 @@ function predictor_corrector(f, r0, par, tmax, dt)
     for t in ts
         dimensions(r)
    		push!(rs, copy(r))
-
 		r_pred = r .+ dt .* f(r, par)
-		
         ### Calculate all parameters of the state array (Hint: use broadcasting)
-		r .= r .+ 0.5 * dt .* (f(r, par) .+ f(r_pred, par))#
+		r .= r .+ 0.5 * dt .* (f(r, par) .+ f(r_pred, par))
 	end
 	dimensions(r)
     push!(rs, copy(r))
@@ -319,7 +312,7 @@ begin
 end
 
 # ╔═╡ 01e2eca6-ae5c-4bf1-a22a-cea64b869d9b
-num_samples = 10000
+num_samples = 1000000
 
 # ╔═╡ 5d352f88-8d33-4d0d-ad57-9bbb99773831
 pdf = histogram(bin_positions, weights=bin_contents, bins=62, xlabel="Mass (MeV/c²)", ylabel="Candidates", title="Histogram of Resonance Data", legend=false)
@@ -590,17 +583,92 @@ begin
 	par_minus = [-e, m_mu, E_exp, B_exp]
 	par_plus = [e, m_mu, E_exp, B_exp]
 	
-	M_mumu = ### Simulate invariant mass of the J/psi using function from the Exersice 2
+	M_mumu = sample_values(cdf_values, bin_positions, Nevents) ### Simulate invariant mass of the J/psi using function from the Exersice 2
 	M_mumu .= M_mumu .* 1.0u"GeV/c^2" ./ 1000.0
 	M_mumu_sim = []
 	pmu_minus = []
 	pmu_plus = []
 	pmu_minus_sim = []
 	pmu_plus_sim = []
+	traj_minus_all = []   # All μ⁻ trajectories
+    traj_plus_all = []    # All μ⁺ trajectories
 	
 	for M in M_mumu
 		### Using functions provided in this exersice, implement simulation of the J/psi decay into two muons, simulate trajectory of the muons with Runge-Kutta method and reconstruct muons momenta. Fill all the arrays, initialized above. Compare reconstructed momenta with initial.
+		# Simulate J/psi decay to two muons
+        p1, p2 = jpsi_to_mumu(M)  # p1 is μ⁻, p2 is μ⁺
+        
+        # Set up initial conditions for muons
+        E1, px1, py1, pz1 = p1
+        E2, px2, py2, pz2 = p2
+        r0_minus = [tmu0, xmu0, ymu0, zmu0, E1, px1, py1, pz1]
+        r0_plus = [tmu0, xmu0, ymu0, zmu0, E2, px2, py2, pz2]
+        
+        # Simulate trajectories using Runge-Kutta
+        traj_minus = runge_kutta_4(eom, r0_minus, par_minus, tmumax, dtmu)
+        traj_plus = runge_kutta_4(eom, r0_plus, par_plus, tmumax, dtmu)
+        
+        # Reconstruct momenta from two points in the trajectory
+        point1_minus = traj_minus[1]  # At t = tmu0
+        point2_minus = traj_minus[end]  # At t = tmumax
+        point1_plus = traj_plus[1]
+        point2_plus = traj_plus[end]
+        
+        _, p_minus_reco = momentum_from_circle(point1_minus, point2_minus, -e, B_exp)
+        _, p_plus_reco = momentum_from_circle(point1_plus, point2_plus, e, B_exp)
+		# Reconstruct angles to get full 4-momenta
+        cos_theta_minus, phi_minus = angles(px1, py1, pz1)
+        cos_theta_plus, phi_plus = angles(px2, py2, pz2)
+        p1_reco = four_momentum(m_mu, p_minus_reco, cos_theta_minus, phi_minus)
+        p2_reco = four_momentum(m_mu, p_plus_reco, cos_theta_plus, phi_plus)
+        
+        # Reconstruct J/psi invariant mass
+        M_reco = jpsi_from_mumu(p1_reco, p2_reco)
+        
+        # Store results
+        push!(M_mumu_sim, M_reco)
+        push!(pmu_minus, p1)
+        push!(pmu_plus, p2)
+        push!(pmu_minus_sim, p1_reco)
+        push!(pmu_plus_sim, p2_reco)
+    end
+
+	# Compare initial and reconstructed momenta
+    for i in 1:Nevents
+        println("Event $i:")
+        println("Initial μ⁻ momentum: ", pmu_minus[i][2:4])
+        println("Reconstructed μ⁻ momentum: ", pmu_minus_sim[i][2:4])
+        println("Initial μ⁺ momentum: ", pmu_plus[i][2:4])
+        println("Reconstructed μ⁺ momentum: ", pmu_plus_sim[i][2:4])
+        println("Initial J/ψ mass: ", M_mumu[i])
+        println("Reconstructed J/ψ mass: ", M_mumu_sim[i])
+	    println("\nΔp/p for each event:")
 	end
+    for i in 1:Nevents
+		
+        # Initial and reconstructed momenta (px, py, pz) in GeV/c
+        p_minus_init = ustrip.(u"GeV/c", pmu_minus[i][2:4])
+        p_minus_reco = ustrip.(u"GeV/c", pmu_minus_sim[i][2:4])
+
+        p_plus_init = ustrip.(u"GeV/c", pmu_plus[i][2:4])
+        p_plus_reco = ustrip.(u"GeV/c", pmu_plus_sim[i][2:4])
+
+        # Compute magnitude of momentum vectors
+        p_minus_mag_init = norm(p_minus_init)
+        p_minus_mag_reco = norm(p_minus_reco)
+
+        p_plus_mag_init = norm(p_plus_init)
+        p_plus_mag_reco = norm(p_plus_reco)
+
+        # Compute delta p / p (now unitless!)
+        delta_p_minus = abs(p_minus_mag_init - p_minus_mag_reco) / p_minus_mag_init
+        delta_p_plus = abs(p_plus_mag_init - p_plus_mag_reco) / p_plus_mag_init
+
+        println("Event $i:")
+        println("Δp/p (μ⁻): ", delta_p_minus)
+        println("Δp/p (μ⁺): ", delta_p_plus)
+    end
+    	
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -2004,7 +2072,7 @@ version = "1.4.1+1"
 # ╔═╡ Cell order:
 # ╠═ac552774-8faa-11ef-257f-ad04db824377
 # ╟─efdd6d2d-2f5b-49a6-910b-098899bc59e3
-# ╟─33699dc6-4d43-480f-905e-2674db611b22
+# ╠═33699dc6-4d43-480f-905e-2674db611b22
 # ╠═cc9d7ea9-91ce-472c-abfe-a67d8d55403e
 # ╠═0aee2d4a-42fb-4569-b199-d7535d811baa
 # ╠═884fc9f1-139a-49c4-bb0e-735715db0e84
