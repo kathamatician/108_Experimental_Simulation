@@ -643,9 +643,7 @@ begin
         println("Initial J/ψ mass: ", M_mumu[i])
         println("Reconstructed J/ψ mass: ", M_mumu_sim[i])
 	    println("\nΔp/p for each event:")
-	end
-    for i in 1:Nevents
-		
+	
         # Initial and reconstructed momenta (px, py, pz) in GeV/c
         p_minus_init = ustrip.(u"GeV/c", pmu_minus[i][2:4])
         p_minus_reco = ustrip.(u"GeV/c", pmu_minus_sim[i][2:4])
@@ -667,6 +665,7 @@ begin
         println("Event $i:")
         println("Δp/p (μ⁻): ", delta_p_minus)
         println("Δp/p (μ⁺): ", delta_p_plus)
+		println("────────────────────────────")
     end
     	
 end
